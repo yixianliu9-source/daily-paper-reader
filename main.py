@@ -11,7 +11,7 @@ RSS_FEEDS = {
     "Public Admin Rev": "https://onlinelibrary.wiley.com/feed/15406210/most-recent",
     "Academy of Mgmt Jnl": "https://journals.aom.org/action/showFeed?type=etoc&feed=rss&jc=amj",
     "Public Mgmt Rev": "https://www.tandfonline.com/feed/rss/rpxm20",
-    "Governance": "https://onlinelibrary.wiley.com/feed/14680493/most-recent"，
+    "Governance": "https://onlinelibrary.wiley.com/feed/14680493/most-recent",
     "IPMJ":"https://www.tandfonline.com/journals/upmj20",
     "PPMR":"https://www.tandfonline.com/journals/mpmr20"
 }
