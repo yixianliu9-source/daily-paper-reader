@@ -3,106 +3,92 @@ import random
 import os
 import datetime
 import pytz
-from openai import OpenAI
+import re
 
 # --- 配置区域 ---
-# 如果用 DeepSeek，Base URL 是 https://api.deepseek.com
-# 如果用其它(如ChatGPT)，请改为对应 URL
-API_BASE = "https://api.deepseek.com" 
-MODEL_NAME = "deepseek-chat" # 或者 "gpt-3.5-turbo"
-
 RSS_FEEDS = {
     "JPART": "https://academic.oup.com/rss/site_5332/3062.xml",
     "Public Admin Rev": "https://onlinelibrary.wiley.com/feed/15406210/most-recent",
     "Academy of Mgmt Jnl": "https://journals.aom.org/action/showFeed?type=etoc&feed=rss&jc=amj",
     "Public Mgmt Rev": "https://www.tandfonline.com/feed/rss/rpxm20",
-    "Governance": "https://onlinelibrary.wiley.com/feed/14680493/most-recent",
+    "Governance": "https://onlinelibrary.wiley.com/feed/14680493/most-recent"，
     "IPMJ":"https://www.tandfonline.com/journals/upmj20",
     "PPMR":"https://www.tandfonline.com/journals/mpmr20"
 }
 
-def get_summary(title, abstract):
-    client = OpenAI(api_key=os.environ.get("LLM_API_KEY"), base_url=API_BASE)
-    
-    prompt = f"""
-    You are a Professor in Public Administration. Summarize the following academic paper abstract.
-    Paper Title: {title}
-    Abstract: {abstract}
-    
-    Output format (in Chinese, use HTML tags):
-    <div class='analysis'>
-        <p><strong>💡 Key Ideas:</strong> [Summarize core arguments in 2-3 bullet points]</p>
-        <p><strong>⚠️ Limitations:</strong> [Critique potential limitations]</p>
-    </div>
-    """
-    
-    try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"<p>AI Summary failed: {str(e)}</p>"
-
 def main():
-    print("Starting Daily Reader...")
+    print("Starting Daily Reader (No-AI Mode)...")
+    
+    tz = pytz.timezone('Asia/Shanghai')
+    today_str = datetime.datetime.now(tz).strftime('%Y-%m-%d')
+    
     articles = []
     
-    # 1. Fetch Articles
+    # 1. 抓取文章
     for journal, url in RSS_FEEDS.items():
         try:
             feed = feedparser.parse(url)
-            for entry in feed.entries[:3]: # Check top 3
+            for entry in feed.entries[:5]: # 每个期刊多抓几篇备选
                 articles.append({
                     "journal": journal,
                     "title": entry.title,
                     "link": entry.link,
-                    "summary": entry.summary[:1000] if 'summary' in entry else "No abstract"
+                    # 清理摘要中可能出现的复杂HTML标签，只保留基本文本
+                    "summary": entry.summary if 'summary' in entry else "No abstract available."
                 })
         except:
             continue
             
-    # 2. Pick 2 Random
+    # 2. 随机选 2 篇
     if len(articles) < 2:
         selection = articles
     else:
         selection = random.sample(articles, 2)
         
-    # 3. Generate HTML Content
-    tz = pytz.timezone('Asia/Shanghai')
-    today_str = datetime.datetime.now(tz).strftime('%Y-%m-%d')
-    
+    # 3. 生成 HTML 内容
+    # 我们给摘要加一个灰色背景框，方便阅读
     new_content = f"""
     <article class="day-entry" id="{today_str}">
         <div class="date-header">{today_str} Daily Picks</div>
     """
     
     for art in selection:
-        print(f"Summarizing: {art['title']}")
-        ai_summary = get_summary(art['title'], art['summary'])
         new_content += f"""
         <div class="paper-card">
             <span class="tag">{art['journal']}</span>
             <h3><a href="{art['link']}" target="_blank">{art['title']}</a></h3>
-            {ai_summary}
+            
+            <div class="abstract-box">
+                <h4>📄 Abstract</h4>
+                <div class="abstract-content">
+                    {art['summary']}
+                </div>
+            </div>
+            
+            <div style="margin-top:15px; text-align:right;">
+                <a href="{art['link']}" target="_blank" style="font-size:0.9em; color:#3498db;">👉 Read Full Article</a>
+            </div>
         </div>
         """
-    new_content += "</article>"
+    new_content += "</article>\n"
     
-    # 4. Read existing index.html or create new
+    # 4. 写入 index.html (包含防重复逻辑)
     if os.path.exists("index.html"):
         with open("index.html", "r", encoding="utf-8") as f:
             existing_html = f.read()
-            # Split to insert new content after the <body> tag
-            parts = existing_html.split('')
-            if len(parts) == 2:
-                final_html = parts[0] + '' + new_content + parts[1]
-            else:
-                final_html = existing_html # Fallback
+            
+        # 清理旧的今日数据
+        pattern = f".*?"
+        existing_html = re.sub(pattern, "", existing_html, flags=re.DOTALL)
+        
+        # 插入新的
+        if "" in existing_html:
+             final_html = existing_html.replace('', '' + new_content)
+        else:
+             final_html = existing_html.replace('<body>', '<body>\n\n' + new_content)
+             
     else:
-        # Initial Template
+        # 初始化模版
         final_html = f"""
         <!DOCTYPE html>
         <html>
@@ -117,17 +103,17 @@ def main():
                 .tag {{ background: #e1ecf4; color: #39739d; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: 600; }}
                 h3 a {{ color: #2c3e50; text-decoration: none; }}
                 h3 a:hover {{ color: #3498db; }}
-                .analysis {{ background: #fafafa; border-left: 4px solid #27ae60; padding: 15px; margin-top: 15px; }}
-                .analysis p {{ margin: 5px 0; }}
+                .abstract-box {{ background: #f9f9f9; padding: 15px; border-radius: 8px; margin-top: 15px; border-left: 4px solid #bdc3c7; }}
+                .abstract-box h4 {{ margin: 0 0 10px 0; color: #7f8c8d; font-size: 0.9em; text-transform: uppercase; }}
+                .abstract-content {{ font-size: 0.95em; line-height: 1.6; color: #444; }}
             </style>
         </head>
         <body>
             <h1 style="text-align:center">📚 My Personal Academic Journal</h1>
-            </body>
+            {new_content}
+        </body>
         </html>
         """
-        # Inject first content
-        final_html = final_html.replace('', '' + new_content)
 
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(final_html)
